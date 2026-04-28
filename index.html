@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mi Muro Personal - Estudiantes</title>
+    <title>Muro Compartido - 5to año</title>
     <style>
         * {
             margin: 0;
@@ -49,8 +49,9 @@
             font-weight: bold;
             margin-right: 10px;
         }
-        button.clear-btn {
-            background: #b91c1c;
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
         }
         .posts-grid {
             display: grid;
@@ -97,52 +98,125 @@
             font-size: 0.8rem;
             color: #6c757d;
         }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 16px;
+            margin-bottom: 1rem;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 16px;
+            margin-bottom: 1rem;
+        }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>📒 Muro de 5º año</h1>
+    <h1>📒 Muro compartido de 5º año</h1>
 
     <div class="card">
         <h2>➕ Agregar información</h2>
+        <div id="formMessage" style="display:none;"></div>
         <input type="text" id="titulo" placeholder="Título (obligatorio)">
         <textarea id="descripcion" placeholder="Describe lo que quieras compartir..."></textarea>
         <input type="file" id="imagen" accept="image/*">
         <input type="file" id="documento" accept=".pdf,.doc,.docx,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
-        <button id="publicarBtn">✨ Publicar</button>
-        <button id="limpiarTodoBtn" class="clear-btn">🗑️ Borrar todos mis datos</button>
+        <button id="publicarBtn">✨ Publicar en el muro compartido</button>
     </div>
 
     <div class="card">
-        <h2>📢 Mis publicaciones</h2>
+        <h2>📢 Publicaciones de toda la clase</h2>
         <div id="listaPublicaciones" class="posts-grid">
-            <div class="empty">Cargando...</div>
+            <div class="loading">Cargando publicaciones desde la nube...</div>
         </div>
     </div>
-    <footer>Los datos se guardan SOLO en este navegador. No se comparten con otros equipos.</footer>
+    <footer>Todos los estudiantes ven las mismas publicaciones. Los datos se guardan en la nube (JSONBin.io).</footer>
 </div>
 
 <script>
-    const STORAGE_KEY = "muro_estudiantes_5to";
+    // ================================================
+    // CREDENCIALES DE JSONBIN.IO (YA CONFIGURADAS)
+    // ================================================
+    const BIN_ID = "69f110f9aaba8821974b63c4";
+    const API_KEY = "$2a$10$Wufn2yK.eeVdxOEdLIWTNuPbnMvVhGYyZfOpr5sppk/uEVw/4J1e.";
+    // ================================================
 
-    function guardarPublicaciones(publicaciones) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(publicaciones));
+    function mostrarMensaje(texto, tipo) {
+        const msgDiv = document.getElementById('formMessage');
+        msgDiv.textContent = texto;
+        msgDiv.className = tipo; // 'error' o 'success'
+        msgDiv.style.display = 'block';
+        setTimeout(() => {
+            msgDiv.style.display = 'none';
+        }, 4000);
     }
 
-    function cargarPublicaciones() {
-        const data = localStorage.getItem(STORAGE_KEY);
-        if (!data) return [];
+    // Cargar datos desde JSONBin.io
+    async function cargarDesdeNube() {
         try {
-            return JSON.parse(data);
-        } catch(e) {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+                headers: {
+                    'X-Master-Key': API_KEY
+                }
+            });
+            if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
+            const data = await response.json();
+            // data.record contiene nuestro objeto { publicaciones: [...] }
+            const publicaciones = data.record.publicaciones || [];
+            // Guardar copia en localStorage como respaldo offline
+            localStorage.setItem('muro_compartido_backup', JSON.stringify(publicaciones));
+            return publicaciones;
+        } catch (error) {
+            console.error("Error al cargar desde JSONBin:", error);
+            // Intentar cargar desde respaldo local
+            const backup = localStorage.getItem('muro_compartido_backup');
+            if (backup) {
+                mostrarMensaje("⚠️ Usando datos guardados localmente (sin conexión a la nube)", "error");
+                return JSON.parse(backup);
+            }
             return [];
         }
     }
 
+    // Guardar datos en JSONBin.io
+    async function guardarEnNube(publicaciones) {
+        try {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Master-Key': API_KEY
+                },
+                body: JSON.stringify({ publicaciones: publicaciones })
+            });
+            if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
+            // Guardar copia local
+            localStorage.setItem('muro_compartido_backup', JSON.stringify(publicaciones));
+            return true;
+        } catch (error) {
+            console.error("Error al guardar en JSONBin:", error);
+            throw error;
+        }
+    }
+
+    // Convertir archivo a base64
     function archivoAURL(file) {
         return new Promise((resolve, reject) => {
             if (!file) {
                 resolve(null);
+                return;
+            }
+            // Limitar tamaño máximo de archivo a 2MB para evitar problemas con JSONBin
+            if (file.size > 2 * 1024 * 1024) {
+                reject(new Error("El archivo es demasiado grande (máximo 2MB). Por favor, reduce el tamaño."));
                 return;
             }
             const lector = new FileReader();
@@ -152,89 +226,119 @@
         });
     }
 
+    // Publicar nueva entrada
     async function publicar() {
         const titulo = document.getElementById('titulo').value.trim();
         const descripcion = document.getElementById('descripcion').value.trim();
         if (!titulo) {
-            alert("El título es obligatorio.");
+            mostrarMensaje("El título es obligatorio.", "error");
             return;
         }
 
         const imagenFile = document.getElementById('imagen').files[0];
         const docFile = document.getElementById('documento').files[0];
 
-        let imagenURL = null;
-        let documentoURL = null;
-        let documentoNombre = null;
+        const publishBtn = document.getElementById('publicarBtn');
+        publishBtn.disabled = true;
+        publishBtn.textContent = "Publicando...";
 
         try {
-            if (imagenFile) imagenURL = await archivoAURL(imagenFile);
-            if (docFile) {
-                documentoURL = await archivoAURL(docFile);
-                documentoNombre = docFile.name;
+            let imagenURL = null;
+            let documentoURL = null;
+            let documentoNombre = null;
+
+            if (imagenFile) {
+                try {
+                    imagenURL = await archivoAURL(imagenFile);
+                } catch (e) {
+                    mostrarMensaje("Error con la imagen: " + e.message, "error");
+                    publishBtn.disabled = false;
+                    publishBtn.textContent = "✨ Publicar en el muro compartido";
+                    return;
+                }
             }
+            if (docFile) {
+                try {
+                    documentoURL = await archivoAURL(docFile);
+                    documentoNombre = docFile.name;
+                } catch (e) {
+                    mostrarMensaje("Error con el documento: " + e.message, "error");
+                    publishBtn.disabled = false;
+                    publishBtn.textContent = "✨ Publicar en el muro compartido";
+                    return;
+                }
+            }
+
+            const nuevaPublicacion = {
+                id: Date.now(),
+                titulo: titulo,
+                descripcion: descripcion,
+                imagenURL: imagenURL,
+                documentoURL: documentoURL,
+                documentoNombre: documentoNombre,
+                fecha: new Date().toLocaleString()
+            };
+
+            // Obtener publicaciones actuales desde la nube
+            const actuales = await cargarDesdeNube();
+            actuales.unshift(nuevaPublicacion);
+            await guardarEnNube(actuales);
+
+            // Limpiar formulario
+            document.getElementById('titulo').value = '';
+            document.getElementById('descripcion').value = '';
+            document.getElementById('imagen').value = '';
+            document.getElementById('documento').value = '';
+
+            // Recargar la lista
+            await mostrarPublicaciones();
+            mostrarMensaje("✅ ¡Publicación añadida al muro compartido! Todos la verán.", "success");
         } catch (error) {
-            alert("Error al leer el archivo: " + error.message);
-            return;
+            mostrarMensaje("Error al publicar: " + error.message, "error");
+        } finally {
+            publishBtn.disabled = false;
+            publishBtn.textContent = "✨ Publicar en el muro compartido";
         }
-
-        const nuevaPublicacion = {
-            id: Date.now(),
-            titulo: titulo,
-            descripcion: descripcion,
-            imagenURL: imagenURL,
-            documentoURL: documentoURL,
-            documentoNombre: documentoNombre,
-            fecha: new Date().toLocaleString()
-        };
-
-        const publicaciones = cargarPublicaciones();
-        publicaciones.unshift(nuevaPublicacion);
-        guardarPublicaciones(publicaciones);
-
-        document.getElementById('titulo').value = '';
-        document.getElementById('descripcion').value = '';
-        document.getElementById('imagen').value = '';
-        document.getElementById('documento').value = '';
-
-        mostrarPublicaciones();
-        alert("✅ Publicación guardada en este navegador.");
     }
 
-    function mostrarPublicaciones() {
+    // Mostrar publicaciones en pantalla
+    async function mostrarPublicaciones() {
         const contenedor = document.getElementById('listaPublicaciones');
-        const publicaciones = cargarPublicaciones();
-
-        if (publicaciones.length === 0) {
-            contenedor.innerHTML = '<div class="empty">📭 No hay publicaciones aún. ¡Agrega la primera!</div>';
-            return;
-        }
-
-        let html = '';
-        for (const pub of publicaciones) {
-            let imagenHtml = '';
-            if (pub.imagenURL && pub.imagenURL.startsWith('data:image')) {
-                imagenHtml = `<img src="${pub.imagenURL}" alt="Imagen">`;
-            } else if (pub.imagenURL) {
-                imagenHtml = `<div style="background:#f8f9fa; padding:10px; border-radius:16px;">🖼️ (imagen no soportada)</div>`;
+        contenedor.innerHTML = '<div class="loading">Cargando desde la nube...</div>';
+        try {
+            const publicaciones = await cargarDesdeNube();
+            if (publicaciones.length === 0) {
+                contenedor.innerHTML = '<div class="empty">📭 No hay publicaciones aún. ¡Sé el primero en compartir!</div>';
+                return;
             }
 
-            let documentoHtml = '';
-            if (pub.documentoURL) {
-                documentoHtml = `<a class="doc-link" href="${pub.documentoURL}" download="${pub.documentoNombre || 'documento'}">📄 ${pub.documentoNombre || 'Documento'}</a>`;
-            }
+            let html = '';
+            for (const pub of publicaciones) {
+                let imagenHtml = '';
+                if (pub.imagenURL && pub.imagenURL.startsWith('data:image')) {
+                    imagenHtml = `<img src="${pub.imagenURL}" alt="Imagen">`;
+                }
 
-            html += `
-                <div class="post">
-                    <h3>📌 ${escapeHtml(pub.titulo)}</h3>
-                    <p>${escapeHtml(pub.descripcion) || 'Sin descripción'}</p>
-                    ${imagenHtml}
-                    ${documentoHtml}
-                    <small style="display:block; margin-top:10px; color:#6c757d;">📅 ${pub.fecha}</small>
-                </div>
-            `;
+                let documentoHtml = '';
+                if (pub.documentoURL) {
+                    documentoHtml = `<a class="doc-link" href="${pub.documentoURL}" download="${pub.documentoNombre || 'documento'}">📄 ${pub.documentoNombre || 'Documento'}</a>`;
+                }
+
+                html += `
+                    <div class="post">
+                        <h3>📌 ${escapeHtml(pub.titulo)}</h3>
+                        <p>${escapeHtml(pub.descripcion) || 'Sin descripción'}</p>
+                        ${imagenHtml}
+                        ${documentoHtml}
+                        <small style="display:block; margin-top:10px; color:#6c757d;">📅 ${pub.fecha}</small>
+                    </div>
+                `;
+            }
+            contenedor.innerHTML = html;
+        } catch (error) {
+            contenedor.innerHTML = '<div class="empty">Error al cargar publicaciones. Revisa la consola (F12).</div>';
+            console.error(error);
         }
-        contenedor.innerHTML = html;
     }
 
     function escapeHtml(str) {
@@ -247,18 +351,10 @@
         });
     }
 
-    function borrarTodo() {
-        if (confirm("⚠️ ¿Estás seguro? Se borrarán todas tus publicaciones (fotos y documentos). No se puede deshacer.")) {
-            localStorage.removeItem(STORAGE_KEY);
-            mostrarPublicaciones();
-            alert("Todos tus datos han sido eliminados.");
-        }
-    }
-
+    // Eventos
     document.addEventListener('DOMContentLoaded', () => {
         mostrarPublicaciones();
         document.getElementById('publicarBtn').addEventListener('click', publicar);
-        document.getElementById('limpiarTodoBtn').addEventListener('click', borrarTodo);
     });
 </script>
 </body>
