@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Muro Personal - Estudiantes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', sans-serif;
+        }
+        body {
+            background: #f0f2f5;
+            padding: 2rem 1rem;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #1e3c72;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: white;
+            border-radius: 24px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        input, textarea, input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0 16px;
+            border: 1px solid #ccc;
+            border-radius: 16px;
+            font-size: 1rem;
+        }
+        button {
+            background: #1e3c72;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        button.clear-btn {
+            background: #b91c1c;
+        }
+        .posts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+        .post {
+            background: white;
+            border-radius: 20px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .post h3 {
+            color: #1e3c72;
+            margin-bottom: 0.5rem;
+        }
+        .post img {
+            max-width: 100%;
+            max-height: 180px;
+            object-fit: cover;
+            border-radius: 16px;
+            margin: 10px 0;
+            background: #eee;
+        }
+        .doc-link {
+            display: inline-block;
+            background: #e9ecef;
+            padding: 6px 12px;
+            border-radius: 20px;
+            text-decoration: none;
+            color: #1e3c72;
+            font-size: 0.9rem;
+            margin-top: 8px;
+        }
+        .empty {
+            text-align: center;
+            color: #6c757d;
+            padding: 2rem;
+        }
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📒 Muro de 5º año</h1>
+
+    <div class="card">
+        <h2>➕ Agregar información</h2>
+        <input type="text" id="titulo" placeholder="Título (obligatorio)">
+        <textarea id="descripcion" placeholder="Describe lo que quieras compartir..."></textarea>
+        <input type="file" id="imagen" accept="image/*">
+        <input type="file" id="documento" accept=".pdf,.doc,.docx,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <button id="publicarBtn">✨ Publicar</button>
+        <button id="limpiarTodoBtn" class="clear-btn">🗑️ Borrar todos mis datos</button>
+    </div>
+
+    <div class="card">
+        <h2>📢 Mis publicaciones</h2>
+        <div id="listaPublicaciones" class="posts-grid">
+            <div class="empty">Cargando...</div>
+        </div>
+    </div>
+    <footer>Los datos se guardan SOLO en este navegador. No se comparten con otros equipos.</footer>
+</div>
+
+<script>
+    const STORAGE_KEY = "muro_estudiantes_5to";
+
+    function guardarPublicaciones(publicaciones) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(publicaciones));
+    }
+
+    function cargarPublicaciones() {
+        const data = localStorage.getItem(STORAGE_KEY);
+        if (!data) return [];
+        try {
+            return JSON.parse(data);
+        } catch(e) {
+            return [];
+        }
+    }
+
+    function archivoAURL(file) {
+        return new Promise((resolve, reject) => {
+            if (!file) {
+                resolve(null);
+                return;
+            }
+            const lector = new FileReader();
+            lector.onload = (e) => resolve(e.target.result);
+            lector.onerror = (error) => reject(error);
+            lector.readAsDataURL(file);
+        });
+    }
+
+    async function publicar() {
+        const titulo = document.getElementById('titulo').value.trim();
+        const descripcion = document.getElementById('descripcion').value.trim();
+        if (!titulo) {
+            alert("El título es obligatorio.");
+            return;
+        }
+
+        const imagenFile = document.getElementById('imagen').files[0];
+        const docFile = document.getElementById('documento').files[0];
+
+        let imagenURL = null;
+        let documentoURL = null;
+        let documentoNombre = null;
+
+        try {
+            if (imagenFile) imagenURL = await archivoAURL(imagenFile);
+            if (docFile) {
+                documentoURL = await archivoAURL(docFile);
+                documentoNombre = docFile.name;
+            }
+        } catch (error) {
+            alert("Error al leer el archivo: " + error.message);
+            return;
+        }
+
+        const nuevaPublicacion = {
+            id: Date.now(),
+            titulo: titulo,
+            descripcion: descripcion,
+            imagenURL: imagenURL,
+            documentoURL: documentoURL,
+            documentoNombre: documentoNombre,
+            fecha: new Date().toLocaleString()
+        };
+
+        const publicaciones = cargarPublicaciones();
+        publicaciones.unshift(nuevaPublicacion);
+        guardarPublicaciones(publicaciones);
+
+        document.getElementById('titulo').value = '';
+        document.getElementById('descripcion').value = '';
+        document.getElementById('imagen').value = '';
+        document.getElementById('documento').value = '';
+
+        mostrarPublicaciones();
+        alert("✅ Publicación guardada en este navegador.");
+    }
+
+    function mostrarPublicaciones() {
+        const contenedor = document.getElementById('listaPublicaciones');
+        const publicaciones = cargarPublicaciones();
+
+        if (publicaciones.length === 0) {
+            contenedor.innerHTML = '<div class="empty">📭 No hay publicaciones aún. ¡Agrega la primera!</div>';
+            return;
+        }
+
+        let html = '';
+        for (const pub of publicaciones) {
+            let imagenHtml = '';
+            if (pub.imagenURL && pub.imagenURL.startsWith('data:image')) {
+                imagenHtml = `<img src="${pub.imagenURL}" alt="Imagen">`;
+            } else if (pub.imagenURL) {
+                imagenHtml = `<div style="background:#f8f9fa; padding:10px; border-radius:16px;">🖼️ (imagen no soportada)</div>`;
+            }
+
+            let documentoHtml = '';
+            if (pub.documentoURL) {
+                documentoHtml = `<a class="doc-link" href="${pub.documentoURL}" download="${pub.documentoNombre || 'documento'}">📄 ${pub.documentoNombre || 'Documento'}</a>`;
+            }
+
+            html += `
+                <div class="post">
+                    <h3>📌 ${escapeHtml(pub.titulo)}</h3>
+                    <p>${escapeHtml(pub.descripcion) || 'Sin descripción'}</p>
+                    ${imagenHtml}
+                    ${documentoHtml}
+                    <small style="display:block; margin-top:10px; color:#6c757d;">📅 ${pub.fecha}</small>
+                </div>
+            `;
+        }
+        contenedor.innerHTML = html;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function borrarTodo() {
+        if (confirm("⚠️ ¿Estás seguro? Se borrarán todas tus publicaciones (fotos y documentos). No se puede deshacer.")) {
+            localStorage.removeItem(STORAGE_KEY);
+            mostrarPublicaciones();
+            alert("Todos tus datos han sido eliminados.");
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        mostrarPublicaciones();
+        document.getElementById('publicarBtn').addEventListener('click', publicar);
+        document.getElementById('limpiarTodoBtn').addEventListener('click', borrarTodo);
+    });
+</script>
+</body>
+</html>
